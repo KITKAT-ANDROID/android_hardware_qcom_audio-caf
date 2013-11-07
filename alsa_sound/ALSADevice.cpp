@@ -25,6 +25,7 @@
 #include "AudioHardwareALSA.h"
 #include <media/AudioRecord.h>
 #include <dlfcn.h>
+#include <math.h>
 #ifdef USE_A2220
 #include <sound/a2220.h>
 #endif
@@ -37,8 +38,10 @@ extern "C" {
 #ifdef QCOM_CSDCLIENT_ENABLED
 static int (*csd_disable_device)();
 static int (*csd_enable_device)(int, int, uint32_t);
-#ifdef NEW_CSDCLIENT
+#ifdef CSD_FAST_CALL_SWITCH
 static int (*csd_enable_device_config)(int, int);
+#endif
+#ifdef NEW_CSDCLIENT
 static int (*csd_volume)(uint32_t, int);
 static int (*csd_mic_mute)(uint32_t, int);
 static int (*csd_wide_voice)(uint32_t, uint8_t);
@@ -100,6 +103,11 @@ ALSADevice::ALSADevice() {
     mCallMode = AUDIO_MODE_NORMAL;
     mInChannels = 0;
     mIsFmEnabled = false;
+#ifdef MOTOROLA_EMU_AUDIO
+    mIsEmuAntipopOn = false;
+#endif
+    //Initialize fm volume to value corresponding to unity volume	92
+    mFmVolume = lrint((0.0 * 0x2000) + 0.5);
     char value[128], platform[128], baseband[128];
 
     property_get("persist.audio.handset.mic",value,"0");
@@ -721,6 +729,11 @@ void ALSADevice::switchDevice(alsa_handle_t *handle, uint32_t devices, uint32_t 
     ALOGV("%s,rxDev:%s, txDev:%s, curRxDev:%s, curTxDev:%s\n", __FUNCTION__, rxDevice, txDevice, mCurRxUCMDevice, mCurTxUCMDevice);
 
     if (rxDevice != NULL) {
+#ifdef MOTOROLA_EMU_AUDIO
+        if (mIsEmuAntipopOn && !AudioUtil::isDockConnected()) {
+            setEmuAntipop(0);
+        }
+#endif
         snd_use_case_set(handle->ucMgr, "_enadev", rxDevice);
         strlcpy(mCurRxUCMDevice, rxDevice, sizeof(mCurRxUCMDevice));
     }
@@ -729,7 +742,7 @@ void ALSADevice::switchDevice(alsa_handle_t *handle, uint32_t devices, uint32_t 
        strlcpy(mCurTxUCMDevice, txDevice, sizeof(mCurTxUCMDevice));
     }
 
-#if defined(QCOM_CSDCLIENT_ENABLED) && defined (NEW_CSDCLIENT)
+#if defined(QCOM_CSDCLIENT_ENABLED) && defined (CSD_FAST_CALL_SWITCH)
     if (isPlatformFusion3() && (inCallDevSwitch == true)) {
 
         /* Get tx acdb id */
@@ -819,7 +832,7 @@ ALOGD("switchDevice: mCurTxUCMDevivce %s mCurRxDevDevice %s", mCurTxUCMDevice, m
 #ifdef QCOM_CSDCLIENT_ENABLED
     if (isPlatformFusion3() && (inCallDevSwitch == true)) {
 
-#ifndef NEW_CSDCLIENT
+#ifndef CSD_FAST_CALL_SWITCH
         /* get tx acdb id */
         memset(&ident,0,sizeof(ident));
         strlcpy(ident, "ACDBID/", sizeof(ident));
@@ -839,7 +852,7 @@ ALOGD("switchDevice: mCurTxUCMDevivce %s mCurRxDevDevice %s", mCurTxUCMDevice, m
         }
         ALOGV("rx_dev_id=%d, tx_dev_id=%d\n", rx_dev_id, tx_dev_id);
 
-#ifndef NEW_CSDCLIENT
+#ifndef CSD_FAST_CALL_SWITCH
         if (csd_enable_device == NULL) {
             ALOGE("csd_client_enable_device is NULL");
         } else {
@@ -1417,6 +1430,7 @@ status_t ALSADevice::setFmVolume(int value, alsa_handle_t *handle)
     int ret = 0;
     char val_str[100], *volMixerCTL;
 
+    mFmVolume = value;
     if (!mIsFmEnabled) {
         return INVALID_OPERATION;
     }
@@ -1433,7 +1447,6 @@ status_t ALSADevice::setFmVolume(int value, alsa_handle_t *handle)
     }
 
     setMixerControl(volMixerCTL,value,0);
-    mFmVolume = value;
 
     return err;
 }
@@ -1747,17 +1760,29 @@ char* ALSADevice::getUCMDevice(uint32_t devices, int input, char *rxDevice)
                     devices & AudioSystem::DEVICE_OUT_DGTL_DOCK_HEADSET) &&
                     mCallMode != AUDIO_MODE_IN_CALL &&
                     devices & AudioSystem::DEVICE_OUT_SPEAKER) {
-#ifdef SAMSUNG_AUDIO
-            if (AudioUtil::isSamsungDockConnected()) {
+#if defined(SAMSUNG_AUDIO) || defined(MOTOROLA_EMU_AUDIO)
+            if (AudioUtil::isDockConnected()) {
+#ifdef MOTOROLA_EMU_AUDIO
+                if (!mIsEmuAntipopOn) {
+                    setEmuAntipop(1);
+                }
+                return strdup(SND_USE_CASE_DEV_DOCK_SPEAKER);
+#else
                 return strdup(SND_USE_CASE_DEV_DOCK);
+#endif
             }
 #endif
             return strdup(SND_USE_CASE_DEV_USB_PROXY_RX_SPEAKER); /* USB PROXY RX + SPEAKER */
         } else if (((devices & AudioSystem::DEVICE_OUT_ANLG_DOCK_HEADSET) ||
                   (devices & AudioSystem::DEVICE_OUT_DGTL_DOCK_HEADSET)) &&
                   mCallMode != AUDIO_MODE_IN_CALL) {
-#ifdef SAMSUNG_AUDIO
-            if (AudioUtil::isSamsungDockConnected()) {
+#if defined(SAMSUNG_AUDIO) || defined(MOTOROLA_EMU_AUDIO)
+            if (AudioUtil::isDockConnected()) {
+#ifdef MOTOROLA_EMU_AUDIO
+                if (!mIsEmuAntipopOn) {
+                    setEmuAntipop(1);
+                }
+#endif
                 return strdup(SND_USE_CASE_DEV_DOCK); /* Dock RX */
             }
 #endif
@@ -1945,6 +1970,9 @@ char* ALSADevice::getUCMDevice(uint32_t devices, int input, char *rxDevice)
                         ((rxDevice == NULL) &&
                         !strncmp(mCurRxUCMDevice, SND_USE_CASE_DEV_SPEAKER,
                         (strlen(SND_USE_CASE_DEV_SPEAKER)+1)))) {
+#ifdef SEPERATED_VOICE_SPEAKER_MIC
+                        return strdup(SND_USE_CASE_DEV_LINE); /* BUILTIN-MIC TX */
+#endif
                         if (mFluenceMode == FLUENCE_MODE_ENDFIRE) {
                             if (mIsSglte == false) {
                                 return strdup(SND_USE_CASE_DEV_SPEAKER_DUAL_MIC_ENDFIRE); /* DUALMIC EF TX */
@@ -2029,11 +2057,6 @@ char* ALSADevice::getUCMDevice(uint32_t devices, int input, char *rxDevice)
 #ifdef SEPERATED_AUDIO_INPUT
                 if(mInputSource == AUDIO_SOURCE_VOICE_RECOGNITION) {
                     return strdup(SND_USE_CASE_DEV_VOICE_RECOGNITION ); /* VOICE RECOGNITION TX */
-                }
-#endif
-#ifdef SEPERATED_CAMCORDER
-                if (mInputSource == AUDIO_SOURCE_CAMCORDER) {
-                    return strdup(SND_USE_CASE_DEV_CAMCORDER_TX); /* CAMCORDER TX */
                 }
 #endif
 #ifdef SEPERATED_VOIP
@@ -2130,6 +2153,8 @@ char* ALSADevice::getUCMDevice(uint32_t devices, int input, char *rxDevice)
 #ifdef SEPERATED_AUDIO_INPUT
                 if (mCallMode == AUDIO_MODE_IN_CALL) {
                     return strdup(SND_USE_CASE_DEV_VOC_LINE); /* Voice BUILTIN-MIC TX */
+                } else if(mInputSource == AUDIO_SOURCE_CAMCORDER) {
+                    return strdup(SND_USE_CASE_DEV_CAMCORDER_TX ); /* CAMCORDER TX */
                 } else
 #endif
                     return strdup(SND_USE_CASE_DEV_LINE); /* BUILTIN-MIC TX */
@@ -2513,6 +2538,16 @@ void ALSADevice::setChannelAlloc(int channelAlloc)
     return;
 }
 
+#ifdef MOTOROLA_EMU_AUDIO
+void ALSADevice::setEmuAntipop(int emuAntipop)
+{
+    ALOGD("Emu Antipop = %d", emuAntipop);
+    setMixerControl("EMU Antipop", emuAntipop, 0);
+    mIsEmuAntipopOn = emuAntipop == 1;
+    return;
+}
+#endif
+
 status_t ALSADevice::getMixerControl(const char *name, unsigned int &value, int index)
 {
     struct mixer_ctl *ctl;
@@ -2673,7 +2708,6 @@ ssize_t  ALSADevice::readFromProxy(void **captureBuffer , ssize_t *bufferSize) {
         }
 
         mProxyParams.mAvail = pcm_avail(capture_handle);
-        mAvailInMs = (mProxyParams.mAvail*1000)/(AFE_PROXY_SAMPLE_RATE);
         ALOGV("avail is = %d frames = %ld, avai_min = %d\n",\
                       mProxyParams.mAvail,  mProxyParams.mFrames,(int)capture_handle->sw_p->avail_min);
         if (mProxyParams.mAvail < capture_handle->sw_p->avail_min) {
@@ -2980,7 +3014,7 @@ status_t ALSADevice::getEDIDData(char *hdmiEDIDData)
     unsigned **EDIDData;
     EDIDData = (unsigned **)malloc((MAX_SHORT_AUDIO_DESC_CNT + 1)*sizeof(unsigned*));
                               // additional 1 byte for length of the EDID
-    unsigned count;
+    unsigned count = 0;
     if(EDIDData) {
         for (int i=0; i<MAX_SHORT_AUDIO_DESC_CNT + 1; i++) {
             EDIDData[i] = (unsigned*)malloc(1 * sizeof(unsigned));
@@ -3024,9 +3058,11 @@ void  ALSADevice::setCsdHandle(void* handle)
                                             "csd_client_disable_device");
     csd_enable_device = (int (*)(int,int,uint32_t))::dlsym(mcsd_handle,
                                                     "csd_client_enable_device");
-#ifdef NEW_CSDCLIENT
+#ifdef CSD_FAST_CALL_SWITCH
     csd_enable_device_config = (int (*)(int,int))::dlsym(mcsd_handle,
                                                     "csd_client_enable_device_config");
+#endif
+#ifdef NEW_CSDCLIENT
     csd_start_voice = (int (*)(uint32_t))::dlsym(mcsd_handle,
                                                  "csd_client_start_voice");
     csd_stop_voice = (int (*)(uint32_t))::dlsym(mcsd_handle,

@@ -208,6 +208,8 @@ AudioHardwareALSA::AudioHardwareALSA() :
                 break;
             } else if (strstr(soundCardInfo, "msm8230-tapan-snd-card")) {
                 break;
+            } else if (strstr(soundCardInfo, "msm8960-snd-card-wcd")) {
+                break;
             } else if(strstr(soundCardInfo, "no soundcards")) {
                 ALOGE("NO SOUND CARD DETECTED");
                 if(sleep_retry < SOUND_CARD_SLEEP_RETRY) {
@@ -1196,7 +1198,7 @@ AudioHardwareALSA::openOutputStream(uint32_t devices,
          devices, *channels, *sampleRate, flags);
 
     status_t err = BAD_VALUE;
-#ifdef QCOM_OUTPUT_FLAGS_ENABLED
+#ifdef QCOM_OUTPUT_LPA_ENABLED
     if (flags & (AUDIO_OUTPUT_FLAG_LPA | AUDIO_OUTPUT_FLAG_TUNNEL)) {
         int type = !(flags & AUDIO_OUTPUT_FLAG_LPA); //0 for LPA, 1 for tunnel
         AudioSessionOutALSA *out = new AudioSessionOutALSA(this, devices, *format, *channels,

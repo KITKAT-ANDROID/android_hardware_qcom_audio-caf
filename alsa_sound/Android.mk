@@ -73,12 +73,12 @@ ifeq ($(strip $(BOARD_USES_SEPERATED_AUDIO_INPUT)),true)
     common_cflags += -DSEPERATED_AUDIO_INPUT
 endif
 
-ifeq ($(strip $(BOARD_USES_SEPERATED_CAMCORDER)),true)
-    common_cflags += -DSEPERATED_CAMCORDER
-endif
-
 ifeq ($(strip $(BOARD_USES_SEPERATED_VOICE_SPEAKER)),true)
     common_cflags += -DSEPERATED_VOICE_SPEAKER
+endif
+
+ifeq ($(strip $(BOARD_USES_SEPERATED_VOICE_SPEAKER_MIC)),true)
+    common_cflags += -DSEPERATED_VOICE_SPEAKER_MIC
 endif
 
 ifeq ($(strip $(BOARD_USES_SEPERATED_HEADSET_MIC)),true)
@@ -101,6 +101,14 @@ ifeq ($(BOARD_HAVE_AUDIENCE_A2220),true)
     common_cflags += -DUSE_A2220
 endif
 
+ifeq ($(BOARD_HAVE_SAMSUNG_AUDIO),true)
+    common_cflags += -DSAMSUNG_AUDIO
+endif
+
+ifeq ($(BOARD_HAVE_CSD_FAST_CALL_SWITCH),true)
+    common_cflags += -DCSD_FAST_CALL_SWITCH
+endif
+
 ifeq ($(BOARD_HAVE_NEW_QCOM_CSDCLIENT),true)
     common_cflags += -DNEW_CSDCLIENT
 endif
@@ -121,6 +129,9 @@ ifneq ($(TARGET_USES_QCOM_COMPRESSED_AUDIO),false)
     common_cflags += -DQCOM_COMPRESSED_AUDIO_ENABLED
 endif
 
+ifeq ($(BOARD_USES_MOTOROLA_EMU_AUDIO),true)
+    common_cflags += -DMOTOROLA_EMU_AUDIO
+endif
 
 include $(CLEAR_VARS)
 
