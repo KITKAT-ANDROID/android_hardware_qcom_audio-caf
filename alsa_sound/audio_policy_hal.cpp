@@ -87,7 +87,7 @@ static audio_policy_dev_state_t ap_get_device_connection_state(
 static void ap_set_phone_state(struct audio_policy *pol, audio_mode_t state)
 {
     struct qcom_audio_policy *qap = to_qap(pol);
-    qap->apm->setPhoneState(state);
+    qap->apm->setPhoneState((int) state);
 }
 
     /* indicate a change in ringer mode */
@@ -379,7 +379,6 @@ static int create_qcom_ap(const struct audio_policy_device *device,
     qap->policy.is_source_active = ap_is_source_active;
     qap->policy.dump = ap_dump;
     qap->policy.is_offload_supported = ap_is_offload_supported;
-
 
     qap->service = service;
     qap->aps_ops = aps_ops;

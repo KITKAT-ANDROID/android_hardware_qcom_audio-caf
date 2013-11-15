@@ -208,8 +208,6 @@ AudioHardwareALSA::AudioHardwareALSA() :
                 break;
             } else if (strstr(soundCardInfo, "msm8230-tapan-snd-card")) {
                 break;
-            } else if (strstr(soundCardInfo, "msm8960-snd-card-wcd")) {
-                break;
             } else if(strstr(soundCardInfo, "no soundcards")) {
                 ALOGE("NO SOUND CARD DETECTED");
                 if(sleep_retry < SOUND_CARD_SLEEP_RETRY) {
@@ -380,7 +378,7 @@ AudioHardwareALSA::AudioHardwareALSA() :
     mALSADevice->setFlags(mDevSettingsFlag);
 
     //set default AudioParameters for surround sound recording
-    char ssr_enabled[6] = "false";
+    char ssr_enabled[PROP_VALUE_MAX] = "false";
     property_get("ro.qc.sdk.audio.ssr",ssr_enabled,"0");
     if (!strncmp("true", ssr_enabled, 4)) {
         ALOGD("surround sound recording is supported");
@@ -957,7 +955,7 @@ status_t AudioHardwareALSA::doRouting(int device)
     if(device)
         mALSADevice->mCurDevice = device;
     if ((device == AudioSystem::DEVICE_IN_VOICE_CALL)
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
+#ifdef QCOM_FM_ENABLED
         || (device == AudioSystem::DEVICE_IN_FM_RX)
         || (device == AudioSystem::DEVICE_IN_FM_RX_A2DP)
 #endif
@@ -1198,7 +1196,7 @@ AudioHardwareALSA::openOutputStream(uint32_t devices,
          devices, *channels, *sampleRate, flags);
 
     status_t err = BAD_VALUE;
-#ifdef QCOM_OUTPUT_LPA_ENABLED
+#ifdef QCOM_OUTPUT_FLAGS_ENABLED
     if (flags & (AUDIO_OUTPUT_FLAG_LPA | AUDIO_OUTPUT_FLAG_TUNNEL)) {
         int type = !(flags & AUDIO_OUTPUT_FLAG_LPA); //0 for LPA, 1 for tunnel
         AudioSessionOutALSA *out = new AudioSessionOutALSA(this, devices, *format, *channels,
@@ -1715,7 +1713,7 @@ AudioHardwareALSA::openInputStream(uint32_t devices,
         else
             alsa_handle.format = *format;
         alsa_handle.channels = VOICE_CHANNEL_MODE;
-        alsa_handle.sampleRate = android::AudioRecord::DEFAULT_SAMPLE_RATE;
+        alsa_handle.sampleRate = 48000;//android::AudioRecord::DEFAULT_SAMPLE_RATE;
         alsa_handle.latency = RECORD_LATENCY;
         alsa_handle.rxHandle = 0;
         alsa_handle.ucMgr = mUcMgr;
@@ -1769,7 +1767,7 @@ AudioHardwareALSA::openInputStream(uint32_t devices,
                         }
                     }
                 }
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
+#ifdef QCOM_FM_ENABLED
             } else if((devices == AudioSystem::DEVICE_IN_FM_RX)) {
                 strlcpy(alsa_handle.useCase, SND_USE_CASE_MOD_CAPTURE_FM, sizeof(alsa_handle.useCase));
             } else if(devices == AudioSystem::DEVICE_IN_FM_RX_A2DP) {
@@ -1822,7 +1820,7 @@ AudioHardwareALSA::openInputStream(uint32_t devices,
                         }
                     }
                 }
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
+#ifdef QCOM_FM_ENABLED
             } else if(devices == AudioSystem::DEVICE_IN_FM_RX) {
                 strlcpy(alsa_handle.useCase, SND_USE_CASE_VERB_FM_REC, sizeof(alsa_handle.useCase));
             } else if (devices == AudioSystem::DEVICE_IN_FM_RX_A2DP) {
